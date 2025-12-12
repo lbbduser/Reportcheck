@@ -1,0 +1,365 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Single-file Panels with UID System</title>
+  <style>
+    :root{--bg:#0f1724;--card:#0b1220;--accent1:#7c3aed;--accent2:#06b6d4;--muted:rgba(255,255,255,0.6)}
+    *{box-sizing:border-box;font-family:Inter,system-ui,Segoe UI,Roboto,Arial}
+    html,body{height:100%;margin:0;background:linear-gradient(135deg,#071021 0%, #071533 50%, #071021 100%);color:#e6eef8}
+    .app{max-width:1100px;margin:28px auto;padding:22px}
+    .card{background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));border-radius:14px;padding:18px;box-shadow:0 8px 30px rgba(2,6,23,0.6);border:1px solid rgba(255,255,255,0.04)}
+    .layout{display:grid;grid-template-columns:1fr 380px;gap:18px}
+    .panel{min-height:360px;padding:18px;border-radius:12px}
+    .user-panel{background:linear-gradient(180deg, rgba(10,20,35,0.6), rgba(8,14,28,0.6));}
+    .admin-panel{background:linear-gradient(180deg, rgba(15,10,25,0.6), rgba(8,12,22,0.6));}
+    input,button,textarea,select{padding:10px 12px;border-radius:10px;border:1px solid rgba(255,255,255,0.06);background:transparent;color:inherit;font-size:14px}
+    .actions{display:flex;gap:8px;justify-content:flex-end}
+    button.primary{background:linear-gradient(90deg,var(--accent1),var(--accent2));color:#041022;border:none;padding:10px 14px;border-radius:10px;cursor:pointer}
+    .center{display:grid;place-items:center}
+    .hidden{display:none}
+    .modal{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);width:420px;max-width:94%;background:rgba(4,8,16,0.95);padding:18px;border-radius:10px;box-shadow:0 14px 40px rgba(0,0,0,0.7);z-index:9999}
+    .small{font-size:13px;color:var(--muted)}
+    .hotspot{position:fixed;left:6px;top:6px;width:36px;height:36px;opacity:0;z-index:99999;cursor:pointer}
+    textarea{resize:none;width:100%;height:120px;background:rgba(255,255,255,0.02);color:#fff;padding:10px;margin-top:6px}
+    select{width:100%;margin-top:6px}
+    .users-list{max-height:220px;overflow:auto;margin-top:10px;border-radius:8px;padding:8px;background:var(--card)}
+    .user-item{display:flex;justify-content:space-between;padding:8px;border-bottom:1px dashed rgba(255,255,255,0.03)}
+    .loading-bar{height:8px;background:linear-gradient(90deg,var(--accent1),var(--accent2));border-radius:4px;width:0;transition:width 0.3s;}
+    @media (max-width:880px){.layout{grid-template-columns:1fr}.modal{width:92%}}
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="layout">
+      <!-- User Panel -->
+      <div class="card user-panel panel" id="userArea">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <div><strong style="font-size:16px">User Panel</strong></div>
+          <div><button class="primary" id="openAdminBtn">Open Admin</button></div>
+        </div>
+        <div>
+          <label>Select Date:</label>
+          <input type="date" id="userDate" />
+          <textarea id="userUID" placeholder="Enter UID(s) line by line"></textarea>
+          <button class="primary" id="userRemoveDupBtn">Remove Duplicates</button>
+          <button class="primary" id="userShowBtn">Show Report</button>
+          <div class="users-list" id="userReport"></div>
+          <div class="actions">
+            <button class="primary" id="userCopyOkBtn">Copy OK UID</button>
+            <button class="primary" id="userCopyBadBtn">Copy Bad UID</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Admin Panel -->
+      <div class="card admin-panel panel" id="adminArea" style="display:none">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <div><strong style="font-size:16px">Admin Panel</strong></div>
+          <div><button class="primary" id="adminLogoutBtn">Logout</button></div>
+        </div>
+        <div>
+          <label>Select Date:</label>
+          <input type="date" id="adminDate" />
+          <label>Enter UID(s) line by line:</label>
+          <textarea id="adminUID"></textarea>
+          <label>Enter Bad UID(s) line by line (optional):</label>
+          <textarea id="adminBadUID"></textarea>
+          <div class="actions">
+            <button class="primary" id="adminRemoveDupBtn">Remove Duplicates</button>
+            <button class="primary" id="adminSaveBtn">Save Data</button>
+          </div>
+          <div class="loading-bar" id="adminLoading"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Hotspot for secret admin login -->
+  <div class="hotspot" id="hotspot"></div>
+
+  <!-- Modal for login -->
+  <div class="modal hidden" id="adminModal">
+    <div id="modeSetup" class="hidden">
+      <form id="formSetup">
+        <input type="password" id="setupPass" placeholder="Password" required autocomplete="new-password" />
+        <div style="height:8px"></div>
+        <div style="display:flex;gap:8px">
+          <input type="text" id="showSecret" readonly style="flex:1" />
+        </div>
+        <div style="height:8px"></div>
+        <div class="actions"><button class="primary" type="submit">Save</button></div>
+      </form>
+    </div>
+    <div id="modeLogin" class="hidden">
+      <form id="formLogin">
+        <input type="password" id="loginPass" placeholder="Password" required autocomplete="new-password" />
+        <div style="height:8px"></div>
+        <input type="text" id="totpCode" placeholder="6-digit code" inputmode="numeric" pattern="[0-9]*" required />
+        <div style="height:8px"></div>
+        <div class="actions"><button class="primary" type="submit">Sign in</button></div>
+      </form>
+    </div>
+  </div>
+
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+
+  <script>
+    // =================== Firebase Setup ===================
+    const firebaseConfig = {
+      apiKey: "AIzaSyBPGqXmn661UIih_J56fPkfKk90bbovaWw",
+      authDomain: "reportcheck-c6960.firebaseapp.com",
+      projectId: "reportcheck-c6960",
+      storageBucket: "reportcheck-c6960.firebasestorage.app",
+      messagingSenderId: "155032314564",
+      appId: "1:155032314564:web:cd6adde048f30841729f91"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+
+    // =================== Admin Login (2FA) ===================
+    const hotspot=document.getElementById('hotspot');
+    const adminModal=document.getElementById('adminModal');
+    const modeSetup=document.getElementById('modeSetup');
+    const modeLogin=document.getElementById('modeLogin');
+    const openAdminBtn=document.getElementById('openAdminBtn');
+    const adminArea=document.getElementById('adminArea');
+    const userArea=document.getElementById('userArea');
+    const adminLogoutBtn=document.getElementById('adminLogoutBtn');
+
+    const ADMIN_PASSWORD='vnbuyer';
+    let taps=0, tapTimer=null;
+
+    hotspot.addEventListener('click',()=>{
+      taps++; clearTimeout(tapTimer);
+      tapTimer=setTimeout(()=>{taps=0;},2500);
+      if(taps>=7){taps=0;openModal();}
+    });
+    openAdminBtn.addEventListener('click',()=>{openModal();});
+    adminLogoutBtn.addEventListener('click',()=>{adminArea.style.display='none'; userArea.style.display='block';});
+
+    function openModal(){
+      adminModal.classList.remove('hidden'); 
+      if(!localStorage.getItem('s_enc')){
+        modeSetup.classList.remove('hidden'); modeLogin.classList.add('hidden');
+        document.getElementById('showSecret').value='QCWGUJO6YDILPSJ6HPC22EZNII';
+      }else{
+        modeSetup.classList.add('hidden'); modeLogin.classList.remove('hidden');
+      }
+    }
+
+    async function deriveKey(pass, salt){
+      const enc=new TextEncoder();
+      const keyMaterial=await crypto.subtle.importKey('raw',enc.encode(pass),'PBKDF2',false,['deriveKey']);
+      return crypto.subtle.deriveKey({name:'PBKDF2',salt:salt,iterations:120000,hash:'SHA-256'},keyMaterial,{name:'AES-GCM',length:256},false,['encrypt','decrypt']);
+    }
+    function rndBytes(len){const b=new Uint8Array(len); crypto.getRandomValues(b); return b;}
+    function toB64(buf){return btoa(String.fromCharCode.apply(null,new Uint8Array(buf)));}
+    function fromB64(s){const bin=atob(s); const arr=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) arr[i]=bin.charCodeAt(i); return arr;}
+
+    async function encryptSecret(secret, pass){
+      const salt=rndBytes(16);
+      const iv=rndBytes(12);
+      const key=await deriveKey(pass,salt);
+      const enc=new TextEncoder();
+      const ct=await crypto.subtle.encrypt({name:'AES-GCM',iv:iv},key,enc.encode(secret));
+      localStorage.setItem('s_salt',toB64(salt));
+      localStorage.setItem('s_iv',toB64(iv));
+      localStorage.setItem('s_enc',toB64(ct));
+    }
+    async function decryptSecret(pass){
+      try{
+        const saltB=fromB64(localStorage.getItem('s_salt'));
+        const iv=fromB64(localStorage.getItem('s_iv'));
+        const ct=fromB64(localStorage.getItem('s_enc'));
+        const key=await deriveKey(pass,saltB);
+        const pt=await crypto.subtle.decrypt({name:'AES-GCM',iv:iv},key,ct);
+        return new TextDecoder().decode(pt);
+      }catch(e){return null;}
+    }
+
+    const alphabet='ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+    function base32ToBytes(s){
+      let bits=''; s=s.replace(/=+$/,'').toUpperCase();
+      for(let i=0;i<s.length;i++){bits+=alphabet.indexOf(s[i]).toString(2).padStart(5,'0');}
+      const bytes=new Uint8Array(Math.floor(bits.length/8));
+      for(let i=0;i<bytes.length;i++){bytes[i]=parseInt(bits.slice(i*8,i*8+8),2);}
+      return bytes;
+    }
+    async function totpFromSecret(secret,forTime=new Date()){
+      const keyBytes=base32ToBytes(secret);
+      const timeStep=Math.floor(forTime.getTime()/1000/30);
+      const counter=new ArrayBuffer(8); const view=new DataView(counter);
+      const hi=Math.floor(timeStep/Math.pow(2,32)); const lo=timeStep>>>0;
+      view.setUint32(0,hi); view.setUint32(4,lo);
+      const cryptoKey=await crypto.subtle.importKey('raw',keyBytes,{name:'HMAC',hash:'SHA-1'},false,['sign']);
+      const sig=await crypto.subtle.sign('HMAC',cryptoKey,counter);
+      const sigBytes=new Uint8Array(sig);
+      const offset=sigBytes[sigBytes.length-1]&0xf;
+      const code=((sigBytes[offset]&0x7f)<<24)|((sigBytes[offset+1]&0xff)<<16)|((sigBytes[offset+2]&0xff)<<8)|(sigBytes[offset+3]&0xff);
+      return (code%1000000).toString().padStart(6,'0');
+    }
+
+    document.getElementById('formSetup').addEventListener('submit',async e=>{
+      e.preventDefault();
+      const p=document.getElementById('setupPass').value||'';
+      if(p!==ADMIN_PASSWORD){alert('Invalid'); return;}
+      const secret=document.getElementById('showSecret').value;
+      await encryptSecret(secret,p);
+      document.getElementById('setupPass').value='';
+      modeSetup.classList.add('hidden'); modeLogin.classList.remove('hidden');
+      alert('Saved');
+    });
+
+    document.getElementById('formLogin').addEventListener('submit',async e=>{
+      e.preventDefault();
+      const p=document.getElementById('loginPass').value||'';
+      const code=(document.getElementById('totpCode').value||'').trim();
+      if(p!==ADMIN_PASSWORD){alert('Invalid'); return;}
+      const secret=await decryptSecret(p);
+      if(!secret){alert('Invalid'); return;}
+      const expected=await totpFromSecret(secret);
+      if(code!==expected){alert('Invalid'); return;}
+      document.getElementById('loginPass').value=''; document.getElementById('totpCode').value='';
+      adminModal.classList.add('hidden');
+      adminArea.style.display='block'; userArea.style.display='none';
+    });
+
+    // =================== UID System ===================
+    const adminDate=document.getElementById('adminDate');
+    const adminUID=document.getElementById('adminUID');
+    const adminBadUID=document.getElementById('adminBadUID');
+    const adminRemoveDupBtn=document.getElementById('adminRemoveDupBtn');
+    const adminSaveBtn=document.getElementById('adminSaveBtn');
+    const adminLoading=document.getElementById('adminLoading');
+    const userDate=document.getElementById('userDate');
+    const userUID=document.getElementById('userUID');
+    const userShowBtn=document.getElementById('userShowBtn');
+    const userReport=document.getElementById('userReport');
+    const userCopyOkBtn=document.getElementById('userCopyOkBtn');
+    const userCopyBadBtn=document.getElementById('userCopyBadBtn');
+    const userRemoveDupBtn=document.getElementById('userRemoveDupBtn');
+
+    function showPopup(msg){
+      const popup=document.createElement('div');
+      popup.className='modal';
+      popup.style.width='300px';
+      popup.innerHTML=`<div style="margin-bottom:12px">${msg}</div><button class="primary">OK</button>`;
+      document.body.appendChild(popup);
+      popup.querySelector('button').addEventListener('click',()=>{popup.remove();});
+    }
+
+    function removeDuplicatesFromTextarea(textarea){
+      const lines=textarea.value.split('\n').map(l=>l.trim()).filter(l=>l);
+      const unique=[...new Set(lines)];
+      textarea.value=unique.join('\n');
+    }
+
+    adminRemoveDupBtn.addEventListener('click',()=>{
+      removeDuplicatesFromTextarea(adminUID);
+      removeDuplicatesFromTextarea(adminBadUID);
+      showPopup('Duplicates removed');
+    });
+
+    userRemoveDupBtn.addEventListener('click',()=>{
+      removeDuplicatesFromTextarea(userUID);
+      showPopup('Duplicates removed');
+    });
+
+    adminDate.addEventListener('change',async ()=>{
+      const date=adminDate.value;
+      if(!date){adminUID.value=''; adminBadUID.value=''; return;}
+      const docRef = db.collection('reports').doc(date);
+      const docSnap = await docRef.get();
+      if(docSnap.exists){
+        const data = docSnap.data();
+        adminUID.value = (data.uids||[]).join('\n');
+        adminBadUID.value = (data.baduids||[]).join('\n');
+      }else{
+        adminUID.value=''; adminBadUID.value='';
+      }
+    });
+
+    userDate.addEventListener('change',()=>{
+      userReport.innerHTML='';
+      userUID.value='';
+    });
+
+    adminSaveBtn.addEventListener('click',async ()=>{
+      const date=adminDate.value; if(!date){showPopup('Select date'); return;}
+      const uids=adminUID.value.split('\n').map(l=>l.trim()).filter(l=>l);
+      const baduids=adminBadUID.value.split('\n').map(l=>l.trim()).filter(l=>l);
+      adminLoading.style.width='0%';
+      let progress=0;
+      const interval=setInterval(()=>{progress+=10; adminLoading.style.width=progress+'%';
+        if(progress>=100){ clearInterval(interval); adminLoading.style.width='0%';
+          db.collection('reports').doc(date).set({uids,baduids})
+            .then(()=>{showPopup('Data saved successfully');})
+            .catch(err=>{showPopup('Error: '+err);});
+        }
+      },100);
+    });
+
+    userShowBtn.addEventListener('click',async ()=>{
+      const date=userDate.value; if(!date){showPopup('Select date'); return;}
+      const docRef=db.collection('reports').doc(date);
+      const docSnap=await docRef.get();
+      if(!docSnap.exists){userReport.innerHTML='<div>No data available</div>'; return;}
+      const data=docSnap.data();
+      const inputUIDs=userUID.value.split('\n').map(l=>l.trim()).filter(l=>l);
+      const okUIDs=[],badUIDs=[];
+      inputUIDs.forEach(uid=>{
+        if(data.uids.includes(uid)) okUIDs.push(uid);
+        else badUIDs.push(uid);
+      });
+      userReport.innerHTML='';
+      if(okUIDs.length) userReport.innerHTML+=`<div><strong>OK UID (${okUIDs.length})</strong><pre>${okUIDs.join('\n')}</pre></div>`;
+      if(badUIDs.length) userReport.innerHTML+=`<div><strong>Bad UID (${badUIDs.length})</strong><pre>${badUIDs.join('\n')}</pre></div>`;
+    });
+
+    function copyToClipboard(text){
+  if(!text) { showPopup('Nothing to copy'); return; }
+  // Fallback for older browsers
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(text).then(()=>{
+      showPopup('Copied Successfully');
+    }).catch(()=>{
+      fallbackCopy(text);
+    });
+  } else {
+    fallbackCopy(text);
+  }
+}
+
+function fallbackCopy(text){
+  const temp = document.createElement('textarea');
+  temp.value = text;
+  document.body.appendChild(temp);
+  temp.select();
+  try { document.execCommand('copy'); showPopup('Copied Successfully'); } 
+  catch(e){ showPopup('Copy failed'); }
+  document.body.removeChild(temp);
+}
+
+// Copy OK UID
+userCopyOkBtn.addEventListener('click',()=>{
+  const okText = Array.from(userReport.querySelectorAll('div strong'))
+    .filter(e=>e.textContent.includes('OK'))
+    .map(e=>e.nextElementSibling.textContent)
+    .join('\n');
+  copyToClipboard(okText);
+});
+
+// Copy Bad UID
+userCopyBadBtn.addEventListener('click',()=>{
+  const badText = Array.from(userReport.querySelectorAll('div strong'))
+    .filter(e=>e.textContent.includes('Bad'))
+    .map(e=>e.nextElementSibling.textContent)
+    .join('\n');
+  copyToClipboard(badText);
+});
+  </script>
+</body>
+</html>
